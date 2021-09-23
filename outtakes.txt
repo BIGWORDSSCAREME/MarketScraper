@@ -1,0 +1,181 @@
+"descriptions: Array(3)
+0: {value: "Halloween: Pumpkin Bombs (spell only active during event)", color: "7ea9d1"}
+1: {value: "Killstreaks Active", color: "7ea9d1"}
+2: {value: "Alt-Fire: Detonate all stickybombs"}"
+
+
+def CollectItemInfo(item):
+    resultdict = {}
+    r = get("https://steamcommunity.com/market/listings/440/Unusual%20Birdcage")
+    root = html.fromstring(r.text)
+
+    #pages = ceil(int(root.get_element_by_id('searchResults_total').text_content()) / 10)
+    #Looks like other pages are found not from url but from AJAX
+
+    for i in root.get_element_by_id("searchResultsRows")[1:]:
+        #There's 3 classes that each of these dudes have. Also they all have
+        #"Listing_" before their id. We don't want that. This is to get order of prices
+        resultdict[i.get('class')[53:]] = {}
+    jscript = root.xpath("//div[contains(@class, 'responsive_page_template_content')]/script")[1].text_content()
+    #The second script tag should have the info we want. No ID or any other
+    #Thing identifying it so i gotta do this weird stuff to find it
+    regex = re.compile('(var g_rgListingInfo = )(.*)(;)')
+    jsunparsed = regex.search(jscript).group()
+    g_rgListingInfo = json.loads(jsunparsed[22:len(jsunparsed) - 1])
+    regex = re.compile('(var g_rgAssets = )(.*)(;)')
+    jsunparsed = regex.search(jscript).group()
+    g_rgAssets = json.loads(jsunparsed[17:len(jsunparsed) - 1])
+    for i in g_rgListingInfo:
+        #This shit way more complicaated than it probably has to be
+        assetid = RemoveLetter("[]\'", [g_rgListingInfo[i]['asset']['id']].__str__())
+        resultdict[i] = [g_rgAssets['440']['2'][assetid], g_rgListingInfo[i]]
+
+The above works perfectly fine with the website, I just discovered an API endpoint.
+It has variables- ListingInfo and assets
+
+item = {
+    'defindex': 615,
+    'quality': 5,
+    'craftable': True,
+    'killstreak': 0,
+    'australium': False,
+    'festive': False,
+    'effect': 1,
+    'paintkit': None,
+    'wear': None,
+    'quality2': None,
+    'target': None,
+    'craftnumber': None,
+    'crateseries': None,
+    'output': None,
+    'outputQuality': None
+}
+
+while scode != 200:
+      sleep(wait)
+      wait += 1
+      r = get(url)
+      scode = r.status_code
+      if scode == 429:
+          print("rate limit status code, waiting {} seconds".format(wait))
+      elif scode != 200:
+          print("Status code {} on url {}".format(scode, url))
+          return None
+  print(scode)
+  return json.loads(r.text)
+
+  def PtfInfoFromSku(sku, previoussearches):
+      #Need to return sku as well
+      resultdict = { "highestbuy": 0, "cheapestsell": 0 }
+      ptfjson = JSONFromUrl("https://api.prices.tf/items/{}?src=bptf".format(sku))
+      if ptfjson != None:
+          try:
+              if ptfjson['sell'] != None:
+                  resultdict["cheapestsell"] = ptfjson['sell']['keys']
+              if ptfjson['buy'] != None:
+                  resultdict["highestbuy"] = ptfjson['buy']['keys']
+          except Exception as e:
+              print(e)
+              print("EXCEPTION FROM PTF, URL https://api.prices.tf/items/{}?src=bptf".format(sku))
+      return resultdict
+
+
+      def CollectItemInfoPTF(item, closepricedict):
+          resultdict = {}
+          #previoussearches probably should be a dict with another dict inside of it instead of lists, but im too lazy to change everything :/
+          previoussearches = {}
+          currentpage = 0
+          totalpages = 1
+          bestdeal = None
+          itemname = item['name']
+          url = "https://steamcommunity.com/market/listings/440/{}/render/?query=&start={}0&count=10&country=US&language=english&currency=1"
+          url = url.format(quote(itemname), "{}")
+          priceregex = re.compile("(\$)([0-9]*)(\.)([0-9]*)")
+          #Make sure to get ID, its in the wikipedia link
+          while currentpage < totalpages:
+              jsondata = JSONFromUrl(url.format(currentpage))
+              while jsondata == None or jsondata['success'] != True:
+                  jsondata = JSONFromUrl(url.format(currentpage))
+              print("TOTALCOUNT {}".format(jsondata["total_count"]))
+              if jsondata['total_count'] == 0:
+                  print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+              #if jsondata["total_count"] == 0:
+              #    print(jsondata)
+              totalpages = ceil(jsondata["total_count"] / 10)
+              Assets = jsondata['assets']
+              ListingInfo = jsondata['listinginfo']
+              if not (Assets == None or Assets == []):
+                  itemid = next(iter(Assets['440']['2']))
+                  itemid = Assets['440']['2'][itemid]['actions'][0]['link']
+                  itemid = itemid[57:itemid.find("&")]
+              else:
+                  #basically if the response is a cringe fail and has empty
+                  #values for shit, then return because thats the end of this item.
+                  print("{} {}s found. A".format(len(resultdict), itemname))
+                  return resultdict, itemname
+              root = html.fromstring(jsondata['results_html'])
+              #First check if price has already been gotten, then put it in here.
+              for i in root.xpath("//div[contains(@class, 'market_listing_row')]"):
+                  profitmargin = 0
+                  ptfinfo = {}
+                  listingid = i.get('class')[53:]
+                  sku = itemid + ";5;u"
+                  price = priceregex.search(i.text_content())
+                  if price == None:
+                      #if no match is found, continue to next iteration of for
+                      continue
+                  price = price.group()[1:]
+                  effect = None
+                  replacementeffect = "NA"
+                  for i in Assets['440']['2'][ListingInfo[listingid]['asset']['id']]['descriptions']:
+                      if i['value'].find("★ Unusual Effect:") == 0:
+                          effect = i['value'][18:]
+                          break
+                  if effect in effectdict.keys():
+                      sku += effectdict[effect]
+                  else:
+                      sku += "-1"
+                  if sku in previoussearches.keys():
+                      ptfinfo["cheapestsell"] = previoussearches[sku][0]
+                      ptfinfo["highestbuy"] = previoussearches[sku][1]
+                  else:
+                      ptfinfo = PtfInfoFromSku(sku, previoussearches)
+                      #Beefy line to make sure the request actually went through and everything. If it returns like None or something,
+                      #I don't want to save that in the previoussearchesdict. Then it wouldn't go through the next best match stuff
+                      if (not sku in previoussearches.keys()) and "highestbuy" in ptfinfo.keys() and ptfinfo["highestbuy"] != None and ptfinfo["highestbuy"] != 0:
+                          previoussearches[sku] = [ptfinfo["cheapestsell"], ptfinfo["highestbuy"]]
+                  #start of logic going through next best price if the original cant be found
+                  if (not ptfinfo.keys()) or ptfinfo["highestbuy"] == None or ptfinfo["highestbuy"] == None or ptfinfo["highestbuy"] == 0:
+                      effectdown = effect
+                      newsku = ""
+                      for i in range(0, 2):
+                          if effectdown in closepricedict.keys() and effectdown in effectdict.keys() and closepricedict[effectdown]["lastnode"] != None:
+                              newsku = itemid + ";5;u" + effectdict[closepricedict[effectdown]["lastnode"]]
+                              if newsku in previoussearches.keys():
+                                  ptfinfo["cheapestsell"] = previoussearches[newsku][0]
+                                  ptfinfo["highestbuy"] = previoussearches[newsku][1]
+                                  replacementeffect = closepricedict[effectdown]["lastnode"]
+                                  break
+                              else:
+                                  ptfinfo = PtfInfoFromSku(newsku, previoussearches)
+                                  if "highestbuy" in ptfinfo.keys() and ptfinfo["highestbuy"] != None and ptfinfo["highestbuy"] != 0:
+                                      previoussearches[sku] = [ptfinfo["cheapestsell"], ptfinfo["highestbuy"]]
+                                      replacementeffect = closepricedict[effectdown]["lastnode"]
+                                      print("REPLACEMENTEFFECT IS {} <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<".format(replacementeffect))
+                                      break
+                                  previoussearches[sku] = [ptfinfo["cheapestsell"], ptfinfo["highestbuy"]]
+                              effectdown = closepricedict[effectdown]["lastnode"]
+                              #If it can't find a match, put it in previoussearches as 000
+                      previoussearches[sku] = [ptfinfo["cheapestsell"], ptfinfo["highestbuy"]]
+                  profitmargin = (ptfinfo["highestbuy"] * 2) / float(price)
+                  if bestdeal == None or profitmargin > bestdeal:
+                      bestdeal = profitmargin
+                  resultdict[listingid] = [price, effect, replacementeffect, sku, ptfinfo["cheapestsell"], ptfinfo["highestbuy"], profitmargin]
+                  #As individual items are updated, add them to an itemlist db with the bestdeal
+                  #Once everything is looped through, drop everything not in the newly fetched itemlist dict.
+                  #Start working on second, behind the scenes, itemlist db. Use a second one to make sure
+                  #It is always sorted by price. Constantly update values of best deal in original one though.
+
+              currentpage += 1
+          print("{} {}s found.".format(len(resultdict), itemname))
+          return resultdict, itemname, bestdeal
